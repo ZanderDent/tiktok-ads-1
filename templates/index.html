@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Story Video Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <h1>Reddit Story Video Generator</h1>
+
+        <!-- Step 1: Get a Story -->
+        <div id="step1">
+            <label for="subreddit">Select Subreddit:</label>
+            <select id="subreddit" name="subreddit">
+                <option value="stories">/r/stories</option>
+                <option value="confession">/r/confession</option>
+                <option value="nosleep">/r/nosleep</option>
+            </select>
+            <button id="getStoryButton" class="animated-button">Get a Story</button>
+        </div>
+
+        <!-- Step 2: Display the Story and Enter Product Information -->
+        <div id="step2" class="story-container" style="display:none;">
+            <h2>Story</h2>
+            <div id="storyContent"></div>
+            <div id="product-info">
+                <label for="product">Enter Product Information:</label>
+                <input type="text" id="product" name="product" placeholder="Enter product or description...">
+                <button id="modifyStoryButton" class="animated-button">Modify Story with Product</button>
+            </div>
+        </div>
+
+        <!-- Step 3: Review Modified Story and Generate Video -->
+        <form id="generateForm" style="display:none;">
+            <h2>Modified Story with Product</h2>
+            <div id="modifiedStoryContent"></div>
+
+            <label for="voice">Select Voice:</label>
+            <select id="voice" name="voice">
+                <option value="alloy">Alloy</option>
+                <option value="echo">Echo</option>
+                <option value="fable">Fable</option>
+                <option value="onyx">Onyx</option>
+                <option value="nova">Nova</option>
+                <option value="shimmer">Shimmer</option>
+            </select>
+
+            <label for="gameplay">Select Gameplay Type:</label>
+            <select id="gameplay" name="gameplay">
+                <option value="subway surfers">Subway Surfers</option>
+                <option value="gta">GTA</option>
+                <option value="minecraft">Minecraft</option> 
+            </select>
+
+            <input type="hidden" id="title" name="title">
+            <input type="hidden" id="story_text" name="story_text">
+            <input type="hidden" id="productHidden" name="product"> <!-- Added hidden input for 'product' -->
+
+            <button type="submit" class="animated-button">Generate</button>
+        </form>
+
+        <div id="loadingBar" style="display:none;">
+            <div id="loadingBarInner"></div>
+        </div>
+
+        <div id="logs">
+            <h2>Logs</h2>
+            <pre id="logMessages"></pre>
+        </div>
+
+        <div id="results">
+            <!-- Video will be displayed here -->
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const getStoryButton = document.getElementById('getStoryButton');
+        const modifyStoryButton = document.getElementById('modifyStoryButton');
+        const storySection = document.getElementById('step2');
+        const storyContent = document.getElementById('storyContent');
+        const productInput = document.getElementById('product');
+        const modifiedStoryContent = document.getElementById('modifiedStoryContent');
+        const generateForm = document.getElementById('generateForm');
+        const form = document.getElementById('generateForm');
+        const loadingBar = document.getElementById('loadingBar');
+        const loadingBarInner = document.getElementById('loadingBarInner');
+        const logMessages = document.getElementById('logMessages');
+        const results = document.getElementById('results');
+
+        let originalStory = '';
+
+        // Declare variables at the top level
+        let progress = 0;
+        const totalSteps = 10;
+
+        function updateProgressBar() {
+            const percentage = (progress / totalSteps) * 100;
+            loadingBarInner.style.width = `${percentage}%`;
+        }
+
+        // Handle Get Story button click
+        getStoryButton.addEventListener('click', async () => {
+            const subreddit = document.getElementById('subreddit').value;
+            try {
+                const response = await fetch(`/get_story?subreddit=${subreddit}`, {
+                    method: 'GET'
+                });
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                // Display the story for approval
+                originalStory = data.story_text;
+                storyContent.innerHTML = `<strong>Title:</strong> ${data.title}<br><br><strong>Story:</strong> ${data.story_text}`;
+                document.getElementById('title').value = data.title;
+                storySection.style.display = 'block';
+                productInput.parentElement.style.display = 'block';  // Show product input
+            } catch (error) {
+                console.error('Error:', error);
+                logMessages.textContent += `Error: ${error.message}\n`;
+            }
+        });
+
+        // Handle Modify Story with Product button click
+        modifyStoryButton.addEventListener('click', () => {
+            const product = productInput.value;
+            if (product) {
+                // Call backend to modify the story with product placement
+                fetch(`/modify_story`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ story: originalStory, product: product })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    // Display modified story
+                    document.getElementById('story_text').value = data.modified_story;
+                    modifiedStoryContent.innerHTML = `<strong>Modified Story:</strong><br>${data.modified_story}`;
+                    generateForm.style.display = 'block';  // Show the form for final step
+
+                    // Set the hidden 'product' input value
+                    document.getElementById('productHidden').value = productInput.value;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    logMessages.textContent += `Error: ${error.message}\n`;
+                });
+            }
+        });
+
+        // Add event listener for form submission
+        form.addEventListener('submit', (e) => {
+            e.preventDefault(); // Prevent form from reloading the page
+            generateContent();  // Call function to handle content generation
+        });
+
+        // Function to generate content
+        async function generateContent() {
+            progress = 0; // Reset progress for each new generation
+            loadingBar.style.display = 'block';
+            loadingBarInner.style.width = '0%';
+            results.innerHTML = ''; // Clear results area
+            logMessages.textContent = '';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'An error occurred');
+                }
+                // Display the video in the results section
+                const videoHTML = `<video controls>
+                                        <source src="${data.video_url}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>`;
+                results.innerHTML = videoHTML;
+            } catch (error) {
+                console.error('Error:', error);
+                logMessages.textContent += `Error: ${error.message}\n`;
+            }
+        }
+
+        const socket = io();
+        socket.on('log_update', (data) => {
+            logMessages.textContent += `${data.log}\n`;
+            progress++;
+            updateProgressBar();
+        });
+    </script>
+</body>
+</html>
