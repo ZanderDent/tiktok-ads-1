@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Content Marketing Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <h1>AI-Powered Content Marketing Generator</h1>
+        <p class="tagline">Transform engaging stories into powerful marketing videos for your brand</p>
+
+        <div class="step-container">
+            <!-- Step 1: Select Your Content Source -->
+            <div id="step1" class="step active">
+                <h2>Step 1: Select Your Content Source</h2>
+                <p>Choose a subreddit to source an engaging story for your marketing content:</p>
+                <select id="subreddit" name="subreddit">
+                    <option value="stories">r/stories - General narratives</option>
+                    <option value="confession">r/confession - Personal experiences</option>
+                    <option value="nosleep">r/nosleep - Thriller/Horror stories</option>
+                </select>
+                <button id="getStoryButton" class="animated-button">Generate Story</button>
+            </div>
+
+            <!-- Step 2: Review and Customize Content -->
+            <div id="step2" class="step" style="display: none;">
+                <h2>Step 2: Review and Customize Content</h2>
+                <div id="step2StoryContainer" class="story-container">
+                    <h3>Generated Story</h3>
+                    <div id="storyContent" class="story-text"></div>
+                    <!-- Scroll Indicator Overlay -->
+                    <div class="scroll-indicator">
+                        <div class="arrow"></div>
+                    </div>
+                </div>
+                <button id="generateAnotherStoryButton" class="animated-button">Generate Another Story</button>
+                <p class="note">Note: Generation takes time; shorter stories result in faster processing.</p>
+                <!-- Product Information Section -->
+                <div id="product-info">
+                    <label for="product">Enter Your Product or Brand:</label>
+                    <input type="text" id="product" name="product" placeholder="e.g., 'EcoFresh Reusable Water Bottles'">
+                    <button id="modifyStoryButton" class="animated-button">Integrate Product into Story</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Finalize and Generate Video -->
+            <div id="step3" class="step" style="display: none;">
+                <h2>Step 3: Finalize and Generate Video</h2>
+                <form id="generateForm" enctype="multipart/form-data">
+                    <div id="modifiedStoryContent" class="story-container">
+                        <!-- Scroll Indicator Overlay for Step 3 -->
+                        <div class="scroll-indicator" id="step3ScrollIndicator">
+                            <div class="arrow"></div>
+                        </div>
+                    </div>
+
+                    <!-- User Info Section -->
+                    <div id="user-info">
+                        <label for="username">Enter Your Username:</label>
+                        <input type="text" id="username" name="username" placeholder="e.g., 'username123'" required>
+                        <label for="profilePicture">Upload Profile Picture:</label>
+                        <input type="file" id="profilePicture" name="profilePicture" accept="image/*" required>
+                    </div>
+            
+                    <!-- Select Narration Voice and Background Visuals -->
+                    <div class="options-container">
+                        <div class="option">
+                            <label for="voice">Select Narration Voice:</label>
+                            <select id="voice" name="voice">
+                                <option value="alloy">Alloy - Neutral professional</option>
+                                <option value="echo">Echo - Warm and friendly</option>
+                                <option value="fable">Fable - Authoritative and clear</option>
+                                <option value="onyx">Onyx - Deep and confident</option>
+                                <option value="nova">Nova - Energetic and expressive</option>
+                                <option value="shimmer">Shimmer - Soothing and reassuring</option>
+                            </select>
+                        </div>
+            
+                        <div class="option">
+                            <label for="gameplay">Select Background Visuals:</label>
+                            <select id="gameplay" name="gameplay">
+                                <option value="subway-surfers">Subway Surfers</option>
+                                <option value="gta">GTA</option>
+                                <option value="minecraft">Minecraft</option>
+                            </select>
+                        </div>
+                    </div>
+            
+                    <input type="hidden" id="title" name="title">
+                    <input type="hidden" id="story_text" name="story_text">
+                    <input type="hidden" id="productHidden" name="product">
+            
+                    <button type="submit" class="animated-button">Generate Marketing Video</button>
+                </form>
+            </div>            
+
+        <div id="loadingBar" style="display:none;">
+            <div id="loadingBarInner"></div>
+        </div>
+
+        <div id="logs">
+            <h3>Generation Progress</h3>
+            <pre id="logMessages"></pre>
+        </div>
+
+        <div id="results">
+            <!-- Video will be displayed here -->
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const getStoryButton = document.getElementById('getStoryButton');
+        const generateAnotherStoryButton = document.getElementById('generateAnotherStoryButton');
+        const modifyStoryButton = document.getElementById('modifyStoryButton');
+        const storyContent = document.getElementById('storyContent');
+        const productInput = document.getElementById('product');
+        const modifiedStoryContent = document.getElementById('modifiedStoryContent');
+        const generateForm = document.getElementById('generateForm');
+        const form = document.getElementById('generateForm');
+        const loadingBar = document.getElementById('loadingBar');
+        const loadingBarInner = document.getElementById('loadingBarInner');
+        const logMessages = document.getElementById('logMessages');
+        const results = document.getElementById('results');
+        const scrollIndicator = document.querySelector('.scroll-indicator');
+        const steps = document.querySelectorAll('.step');
+        const step2StoryContainer = document.getElementById('step2StoryContainer');
+
+        let originalStory = '';
+        let progress = 0;
+        const totalSteps = 10;
+
+        function updateProgressBar() {
+            const percentage = (progress / totalSteps) * 100;
+            loadingBarInner.style.width = `${percentage}%`;
+        }
+
+        function scrollToBottom(container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        }
+        
+        function activateStep(stepNumber) {
+            steps.forEach((step, index) => {
+                if (index + 1 === stepNumber) {
+                    step.classList.add('active');
+                    step.style.display = 'block';
+                } else {
+                    step.classList.remove('active');
+                    step.style.display = 'none';
+                }
+            });
+        }
+
+        // Function to set up the scroll behavior for both containers
+        function setupScrollBehavior(container, indicator) {
+            container.addEventListener('scroll', () => {
+                const maxScrollTop = container.scrollHeight - container.clientHeight;
+                
+                // When the user scrolls to the bottom, fade out and remove the indicator
+                if (container.scrollTop >= maxScrollTop - 10) {
+                    indicator.style.opacity = '0'; // Fade out
+                    // Delay to allow opacity transition
+                    setTimeout(() => {
+                        indicator.style.display = 'none'; // After fade-out, hide completely
+                    }, 600); // Matches fade-out duration
+
+                    container.classList.add('overlay-hidden'); // Ensure the overlay is hidden
+                } else {
+                    indicator.style.display = 'block'; // Show if the user scrolls back up
+                    indicator.style.opacity = '1'; // Fade in
+                }
+            });
+
+            // Add a click event to the indicator so that it fades out when clicked
+            indicator.addEventListener('click', () => {
+                container.classList.add('fade-out');
+                indicator.classList.add('fade-out');
+                setTimeout(() => {
+                    scrollToBottom(container);
+                    indicator.style.display = 'none'; // Hide after scrolling down
+                    container.classList.add('overlay-hidden'); // Hide the overlay once scrolled
+                }, 600); // Match fade-out time
+            });
+        }
+
+        // Apply the scroll behavior to both Step 2 and Step 3 containers
+        setupScrollBehavior(step2StoryContainer, document.querySelector('.scroll-indicator'));  // Step 2
+        setupScrollBehavior(document.getElementById('modifiedStoryContent'), document.getElementById('step3ScrollIndicator'));  // Step 3
+
+        async function fetchStory() {
+            const subreddit = document.getElementById('subreddit').value;
+            try {
+                productInput.value = '';
+                document.getElementById('story_text').value = '';
+                modifiedStoryContent.innerHTML = '';
+                generateForm.style.display = 'block';
+                scrollIndicator.style.display = 'block';
+                step2StoryContainer.classList.remove('fade-out', 'overlay-hidden');
+                scrollIndicator.classList.remove('fade-out');
+
+                const response = await fetch(`/get_story?subreddit=${subreddit}`, {
+                    method: 'GET'
+                });
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                originalStory = data.story_text;
+                storyContent.innerHTML = `<strong>Title:</strong> ${data.title}<br><br><strong>Story:</strong> ${data.story_text}`;
+                document.getElementById('title').value = data.title;
+                activateStep(2);
+                step2StoryContainer.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (error) {
+                console.error('Error:', error);
+                logMessages.textContent += `Error: ${error.message}\n`;
+            }
+        }
+
+        getStoryButton.addEventListener('click', fetchStory);
+        generateAnotherStoryButton.addEventListener('click', fetchStory);
+
+        modifyStoryButton.addEventListener('click', () => {
+            const product = productInput.value;
+            if (product) {
+                fetch('/modify_story', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ story: originalStory, product: product })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    if (data.modified_story) {
+                        modifiedStoryContent.innerHTML = `<strong>Customized Marketing Story:</strong><br>${data.modified_story}`;
+                        document.getElementById('story_text').value = data.modified_story;
+                        document.getElementById('productHidden').value = productInput.value;
+
+                        activateStep(3);
+                        generateForm.style.display = 'block';  // This ensures the form is visible
+                    } else {
+                        console.error('No valid modified story received');
+                        logMessages.textContent += 'Error: No valid modified story received\n';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error during story modification:', error);
+                    logMessages.textContent += `Error: ${error.message}\n`;
+                });
+            } else {
+                console.error('No product entered');
+                logMessages.textContent += 'Error: Please enter a product before modifying the story\n';
+            }
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            // Capture username and profile picture
+            const username = document.getElementById('username').value;
+            const profilePic = document.getElementById('profilePicture').files[0];  // Profile picture file
+
+            const formData = new FormData(form);
+            formData.append('username', username);
+            formData.append('profile_pic_path', profilePic);
+
+            generateContent(formData);
+        });
+
+
+        async function generateContent() {
+            progress = 0;
+            loadingBar.style.display = 'block';
+            loadingBarInner.style.width = '0%';
+            results.innerHTML = '';
+            logMessages.textContent = '';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'An error occurred');
+                }
+                const videoHTML = `<video controls>
+                                        <source src="${data.video_url}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>`;
+                results.innerHTML = `<h3>Your Generated Marketing Video</h3>${videoHTML}`;
+            } catch (error) {
+                console.error('Error:', error);
+                logMessages.textContent += `Error: ${error.message}\n`;
+            }
+        }
+
+        const socket = io();
+        socket.on('log_update', (data) => {
+            logMessages.textContent += `${data.log}\n`;
+            if (progress < totalSteps) {
+                progress++;
+                updateProgressBar();
+            }
+        });
+
+        socket.on('process_complete', (data) => {
+            progress = totalSteps;
+            updateProgressBar();
+        });
+    </script>
+</body>
+</html>
